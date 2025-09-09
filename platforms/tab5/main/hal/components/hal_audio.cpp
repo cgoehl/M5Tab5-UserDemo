@@ -17,7 +17,7 @@
 
 static const char* TAG = "audio";
 
-static uint8_t _current_speaker_volume = 80;
+static uint8_t _current_speaker_volume = 60;
 
 void HalEsp32::setSpeakerVolume(uint8_t volume)
 {

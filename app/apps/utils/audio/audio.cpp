@@ -135,7 +135,7 @@ void play_next_tone_progression(double durationSec)
         return;
     }
 
-    constexpr int REPEAT_EACH_CHORD = 1;
+    constexpr int REPEAT_EACH_CHORD = 2;
     constexpr int SEMITONE_SHIFT    = 24;
 
     static std::vector<int> melody = {60, 67, 69, 64, 65, 60, 65, 67};  // 15634145
