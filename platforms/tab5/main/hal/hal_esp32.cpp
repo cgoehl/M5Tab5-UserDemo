@@ -104,12 +104,12 @@ void HalEsp32::init()
     lv_display_set_rotation(lvDisp, LV_DISPLAY_ROTATION_90);
     bsp_display_backlight_on();
 
-    // Touchpad lvgl indev
-    mclog::tagInfo(_tag, "create lvgl touchpad indev");
-    lvTouchpad = lv_indev_create();
-    lv_indev_set_type(lvTouchpad, LV_INDEV_TYPE_POINTER);
-    lv_indev_set_read_cb(lvTouchpad, lvgl_read_cb);
-    lv_indev_set_display(lvTouchpad, lvDisp);
+    // // Touchpad lvgl indev
+    // mclog::tagInfo(_tag, "create lvgl touchpad indev");
+    // lvTouchpad = lv_indev_create();
+    // lv_indev_set_type(lvTouchpad, LV_INDEV_TYPE_POINTER);
+    // lv_indev_set_read_cb(lvTouchpad, lvgl_read_cb);
+    // lv_indev_set_display(lvTouchpad, lvDisp);
 
     mclog::tagInfo(_tag, "usb host init");
     bsp_usb_host_start(BSP_USB_HOST_POWER_MODE_USB_DEV, true);

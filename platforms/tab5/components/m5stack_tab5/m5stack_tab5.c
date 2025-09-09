@@ -20,11 +20,13 @@
 #include "freertos/task.h"
 #include "sdmmc_cmd.h"
 #include "esp_lcd_st7703.h"
+#include "esp_lcd_st7123.h"
 #include "esp_lcd_ili9881c.h"
 #include "bsp/m5stack_tab5.h"
 #include "bsp/display.h"
 #include "bsp/touch.h"
 #include "esp_lcd_touch_gt911.h"
+#include "esp_lcd_touch_st7123.h"
 #include "bsp_err_check.h"
 #include "esp_codec_dev_defaults.h"
 
@@ -799,9 +801,9 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void)
 
     i2c_master_bus_handle_t i2c_bus_handle = bsp_i2c_get_handle();
     audio_codec_i2c_cfg_t i2c_cfg          = {
-        .port       = BSP_I2C_NUM,
-        .addr       = ES8388_CODEC_DEFAULT_ADDR,
-        .bus_handle = i2c_bus_handle,
+                 .port       = BSP_I2C_NUM,
+                 .addr       = ES8388_CODEC_DEFAULT_ADDR,
+                 .bus_handle = i2c_bus_handle,
     };
     const audio_codec_ctrl_if_t* i2c_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
     BSP_NULL_CHECK(i2c_ctrl_if, NULL);
@@ -844,9 +846,9 @@ esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
 
     i2c_master_bus_handle_t i2c_bus_handle = bsp_i2c_get_handle();
     audio_codec_i2c_cfg_t i2c_cfg          = {
-        .port       = BSP_I2C_NUM,
-        .addr       = ES7210_CODEC_DEFAULT_ADDR,
-        .bus_handle = i2c_bus_handle,
+                 .port       = BSP_I2C_NUM,
+                 .addr       = ES7210_CODEC_DEFAULT_ADDR,
+                 .bus_handle = i2c_bus_handle,
     };
     const audio_codec_ctrl_if_t* i2c_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
     BSP_NULL_CHECK(i2c_ctrl_if, NULL);
@@ -1067,8 +1069,8 @@ static esp_err_t bsp_enable_dsi_phy_power(void)
     // Turn on the power for MIPI DSI PHY, so it can go from "No Power" state to "Shutdown" state
     static esp_ldo_channel_handle_t phy_pwr_chan = NULL;
     esp_ldo_channel_config_t ldo_cfg             = {
-        .chan_id    = BSP_MIPI_DSI_PHY_PWR_LDO_CHAN,
-        .voltage_mv = BSP_MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV,
+                    .chan_id    = BSP_MIPI_DSI_PHY_PWR_LDO_CHAN,
+                    .voltage_mv = BSP_MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV,
     };
     ESP_RETURN_ON_ERROR(esp_ldo_acquire_channel(&ldo_cfg, &phy_pwr_chan), TAG, "Acquire LDO channel for DPHY failed");
     ESP_LOGI(TAG, "MIPI DSI PHY Powered on");
@@ -1108,10 +1110,10 @@ esp_err_t bsp_display_new_with_handles(const bsp_display_config_t* config, bsp_l
     /* create MIPI DSI bus first, it will initialize the DSI PHY as well */
     esp_lcd_dsi_bus_handle_t mipi_dsi_bus = NULL;
     esp_lcd_dsi_bus_config_t bus_config   = {
-        .bus_id             = 0,
-        .num_data_lanes     = BSP_LCD_MIPI_DSI_LANE_NUM,
-        .phy_clk_src        = MIPI_DSI_PHY_CLK_SRC_DEFAULT,
-        .lane_bit_rate_mbps = BSP_LCD_MIPI_DSI_LANE_BITRATE_MBPS,
+          .bus_id             = 0,
+          .num_data_lanes     = BSP_LCD_MIPI_DSI_LANE_NUM,
+          .phy_clk_src        = MIPI_DSI_PHY_CLK_SRC_DEFAULT,
+          .lane_bit_rate_mbps = BSP_LCD_MIPI_DSI_LANE_BITRATE_MBPS,
     };
     ESP_RETURN_ON_ERROR(esp_lcd_new_dsi_bus(&bus_config, &mipi_dsi_bus), TAG, "New DSI bus init failed");
 
@@ -1234,6 +1236,195 @@ err:
     return ret;
 }
 
+// #define LCD_MIPI_DSI_USE_ST7123
+#ifdef LCD_MIPI_DSI_USE_ST7123
+#include "esp_lcd_st7123.h"
+
+// ST7123 触摸坐标打印回调函数
+static void st7123_touch_callback(esp_lcd_touch_handle_t tp)
+{
+    uint16_t touch_x[10];
+    uint16_t touch_y[10];
+    uint16_t touch_strength[10];
+    uint8_t touch_cnt = 0;
+
+    // 读取触摸数据
+    esp_err_t ret = esp_lcd_touch_read_data(tp);
+    if (ret == ESP_OK) {
+        // 获取触摸坐标
+        bool pressed = esp_lcd_touch_get_coordinates(tp, touch_x, touch_y, touch_strength, &touch_cnt, 10);
+
+        if (pressed && touch_cnt > 0) {
+            for (int i = 0; i < touch_cnt; i++) {
+                printf("ST7123 Touch %d: x=%d, y=%d, strength=%d\n", i, touch_x[i], touch_y[i], touch_strength[i]);
+            }
+        }
+    }
+}
+
+// ST7123 vendor specific initialization commands
+static const st7123_lcd_init_cmd_t st7123_vendor_specific_init_default[] = {
+    {0x60, (uint8_t[]){0x71, 0x23, 0xa2}, 3, 0},
+    {0x60, (uint8_t[]){0x71, 0x23, 0xa3}, 3, 0},
+    {0x60, (uint8_t[]){0x71, 0x23, 0xa4}, 3, 0},
+    {0xA4, (uint8_t[]){0x31}, 1, 0},
+    {0xD7, (uint8_t[]){0x10, 0x0A, 0x10, 0x2A, 0x80, 0x80}, 6, 0},
+    {0x90, (uint8_t[]){0x71, 0x23, 0x5A, 0x20, 0x24, 0x09, 0x09}, 7, 0},
+    {0xA3, (uint8_t[]){0x80, 0x01, 0x88, 0x30, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46, 0x00, 0x00,
+                       0x1E, 0x5C, 0x1E, 0x80, 0x00, 0x4F, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46,
+                       0x00, 0x00, 0x1E, 0x5C, 0x1E, 0x80, 0x00, 0x6F, 0x58, 0x00, 0x00, 0x00, 0xFF},
+     40, 0},
+    {0xA6, (uint8_t[]){0x03, 0x00, 0x24, 0x55, 0x36, 0x00, 0x39, 0x00, 0x6E, 0x6E, 0x91, 0xFF, 0x00, 0x24,
+                       0x55, 0x38, 0x00, 0x37, 0x00, 0x6E, 0x6E, 0x91, 0xFF, 0x00, 0x24, 0x11, 0x00, 0x00,
+                       0x00, 0x00, 0x6E, 0x6E, 0x91, 0xFF, 0x00, 0xEC, 0x11, 0x00, 0x03, 0x00, 0x03, 0x6E,
+                       0x6E, 0xFF, 0xFF, 0x00, 0x08, 0x80, 0x08, 0x80, 0x06, 0x00, 0x00, 0x00, 0x00},
+     55, 0},
+    {0xA7, (uint8_t[]){0x19, 0x19, 0x80, 0x64, 0x40, 0x07, 0x16, 0x40, 0x00, 0x44, 0x03, 0x6E, 0x6E, 0x91, 0xFF,
+                       0x08, 0x80, 0x64, 0x40, 0x25, 0x34, 0x40, 0x00, 0x02, 0x01, 0x6E, 0x6E, 0x91, 0xFF, 0x08,
+                       0x80, 0x64, 0x40, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x6E, 0x6E, 0x91, 0xFF, 0x08, 0x80,
+                       0x64, 0x40, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x6E, 0x6E, 0x84, 0xFF, 0x08, 0x80, 0x44},
+     60, 0},
+    {0xAC, (uint8_t[]){0x03, 0x19, 0x19, 0x18, 0x18, 0x06, 0x13, 0x13, 0x11, 0x11, 0x08, 0x08, 0x0A, 0x0A, 0x1C,
+                       0x1C, 0x07, 0x07, 0x00, 0x00, 0x02, 0x02, 0x01, 0x19, 0x19, 0x18, 0x18, 0x06, 0x12, 0x12,
+                       0x10, 0x10, 0x09, 0x09, 0x0B, 0x0B, 0x1C, 0x1C, 0x07, 0x07, 0x03, 0x03, 0x01, 0x01},
+     44, 0},
+    {0xAD, (uint8_t[]){0xF0, 0x00, 0x46, 0x00, 0x03, 0x50, 0x50, 0xFF, 0xFF, 0xF0, 0x40, 0x06, 0x01,
+                       0x07, 0x42, 0x42, 0xFF, 0xFF, 0x01, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF},
+     25, 0},
+    {0xAE, (uint8_t[]){0xFE, 0x3F, 0x3F, 0xFE, 0x3F, 0x3F, 0x00}, 7, 0},
+    {0xB2,
+     (uint8_t[]){0x15, 0x19, 0x05, 0x23, 0x49, 0xAF, 0x03, 0x2E, 0x5C, 0xD2, 0xFF, 0x10, 0x20, 0xFD, 0x20, 0xC0, 0x00},
+     17, 0},
+    {0xE8, (uint8_t[]){0x20, 0x6F, 0x04, 0x97, 0x97, 0x3E, 0x04, 0xDC, 0xDC, 0x3E, 0x06, 0xFA, 0x26, 0x3E}, 15, 0},
+    {0x75, (uint8_t[]){0x03, 0x04}, 2, 0},
+    {0xE7, (uint8_t[]){0x3B, 0x00, 0x00, 0x7C, 0xA1, 0x8C, 0x20, 0x1A, 0xF0, 0xB1, 0x50, 0x00,
+                       0x50, 0xB1, 0x50, 0xB1, 0x50, 0xD8, 0x00, 0x55, 0x00, 0xB1, 0x00, 0x45,
+                       0xC9, 0x6A, 0xFF, 0x5A, 0xD8, 0x18, 0x88, 0x15, 0xB1, 0x01, 0x01, 0x77},
+     36, 0},
+    {0xEA, (uint8_t[]){0x13, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x2C}, 8, 0},
+    {0xB0, (uint8_t[]){0x22, 0x43, 0x11, 0x61, 0x25, 0x43, 0x43}, 7, 0},
+    {0xb7, (uint8_t[]){0x00, 0x00, 0x73, 0x73}, 0x04, 0},
+    {0xBF, (uint8_t[]){0xA6, 0XAA}, 2, 0},
+    {0xA9, (uint8_t[]){0x00, 0x00, 0x73, 0xFF, 0x00, 0x00, 0x03, 0x00, 0x00, 0x03}, 10, 0},
+    {0xC8, (uint8_t[]){0x00, 0x00, 0x10, 0x1F, 0x36, 0x00, 0x5D, 0x04, 0x9D, 0x05, 0x10, 0xF2, 0x06,
+                       0x60, 0x03, 0x11, 0xAD, 0x00, 0xEF, 0x01, 0x22, 0x2E, 0x0E, 0x74, 0x08, 0x32,
+                       0xDC, 0x09, 0x33, 0x0F, 0xF3, 0x77, 0x0D, 0xB0, 0xDC, 0x03, 0xFF},
+     37, 0},
+    {0xC9, (uint8_t[]){0x00, 0x00, 0x10, 0x1F, 0x36, 0x00, 0x5D, 0x04, 0x9D, 0x05, 0x10, 0xF2, 0x06,
+                       0x60, 0x03, 0x11, 0xAD, 0x00, 0xEF, 0x01, 0x22, 0x2E, 0x0E, 0x74, 0x08, 0x32,
+                       0xDC, 0x09, 0x33, 0x0F, 0xF3, 0x77, 0x0D, 0xB0, 0xDC, 0x03, 0xFF},
+     37, 0},
+    {0x36, (uint8_t[]){0x00}, 1, 0},
+    {0x11, (uint8_t[]){0x00}, 1, 100},
+    {0x29, (uint8_t[]){0x00}, 1, 0},
+    {0x35, (uint8_t[]){0x00}, 1, 100},
+};
+
+// 适配st7123 tab5 屏幕
+esp_err_t bsp_display_new_with_handles_to_st7123(const bsp_display_config_t* config, bsp_lcd_handles_t* ret_handles)
+{
+    esp_err_t ret                         = ESP_OK;
+    esp_lcd_panel_io_handle_t io          = NULL;
+    esp_lcd_panel_handle_t disp_panel     = NULL;
+    esp_lcd_dsi_bus_handle_t mipi_dsi_bus = NULL;
+
+    ESP_RETURN_ON_ERROR(bsp_display_brightness_init(), TAG, "Brightness init failed");
+    ESP_RETURN_ON_ERROR(bsp_enable_dsi_phy_power(), TAG, "DSI PHY power failed");
+
+    /* create MIPI DSI bus first, it will initialize the DSI PHY as well */
+    esp_lcd_dsi_bus_config_t bus_config = {
+        .bus_id             = 0,
+        .num_data_lanes     = 2,  // ST7123 uses 2 data lanes
+        .phy_clk_src        = MIPI_DSI_PHY_CLK_SRC_DEFAULT,
+        .lane_bit_rate_mbps = 965,  // ST7123 lane bitrate
+    };
+    ESP_RETURN_ON_ERROR(esp_lcd_new_dsi_bus(&bus_config, &mipi_dsi_bus), TAG, "New DSI bus init failed");
+
+    ESP_LOGI(TAG, "Install MIPI DSI LCD control panel for ST7123");
+    // we use DBI interface to send LCD commands and parameters
+    esp_lcd_dbi_io_config_t dbi_config = {
+        .virtual_channel = 0,
+        .lcd_cmd_bits    = 8,  // according to the LCD spec
+        .lcd_param_bits  = 8,  // according to the LCD spec
+    };
+    ESP_GOTO_ON_ERROR(esp_lcd_new_panel_io_dbi(mipi_dsi_bus, &dbi_config, &io), err, TAG, "New panel IO failed");
+
+    ESP_LOGI(TAG, "Install LCD driver of ST7123");
+    esp_lcd_dpi_panel_config_t dpi_config = {
+        .virtual_channel    = 0,
+        .dpi_clk_src        = MIPI_DSI_DPI_CLK_SRC_DEFAULT,
+        .dpi_clock_freq_mhz = 70,  // ST7123 DPI clock frequency
+        .pixel_format       = LCD_COLOR_PIXEL_FORMAT_RGB565,
+        .num_fbs            = 1,
+        .video_timing =
+            {
+                .h_size            = 720,
+                .v_size            = 1280,
+                .hsync_pulse_width = 2,
+                .hsync_back_porch  = 40,
+                .hsync_front_porch = 40,
+                .vsync_pulse_width = 2,
+                .vsync_back_porch  = 8,
+                .vsync_front_porch = 220,
+            },
+        .flags =
+            {
+                .use_dma2d = true,
+            },
+    };
+
+    st7123_vendor_config_t vendor_config = {
+        .init_cmds      = st7123_vendor_specific_init_default,
+        .init_cmds_size = sizeof(st7123_vendor_specific_init_default) / sizeof(st7123_vendor_specific_init_default[0]),
+        .mipi_config =
+            {
+                .dsi_bus    = mipi_dsi_bus,
+                .dpi_config = &dpi_config,
+                .lane_num   = 2,
+            },
+    };
+
+    const esp_lcd_panel_dev_config_t lcd_dev_config = {
+        .reset_gpio_num = -1,
+        .rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB,
+        .data_endian    = LCD_RGB_DATA_ENDIAN_LITTLE,
+        .bits_per_pixel = 24,
+        .vendor_config  = &vendor_config,
+    };
+
+    // 使用实际的 ST7123 驱动函数
+    ESP_GOTO_ON_ERROR(esp_lcd_new_panel_st7123(io, &lcd_dev_config, &disp_panel), err, TAG,
+                      "New LCD panel ST7123 failed");
+
+    ESP_GOTO_ON_ERROR(esp_lcd_panel_reset(disp_panel), err, TAG, "LCD panel reset failed");
+    ESP_GOTO_ON_ERROR(esp_lcd_panel_init(disp_panel), err, TAG, "LCD panel init failed");
+    ESP_GOTO_ON_ERROR(esp_lcd_panel_disp_on_off(disp_panel, true), err, TAG, "LCD panel display on failed");
+
+    /* Return all handles */
+    ret_handles->io           = io;
+    ret_handles->mipi_dsi_bus = mipi_dsi_bus;
+    ret_handles->panel        = disp_panel;
+    ret_handles->control      = NULL;
+
+    ESP_LOGI(TAG, "ST7123 Display initialized with resolution %dx%d", 720, 1280);
+
+    return ret;
+
+err:
+    if (disp_panel) {
+        esp_lcd_panel_del(disp_panel);
+    }
+    if (io) {
+        esp_lcd_panel_io_del(io);
+    }
+    if (mipi_dsi_bus) {
+        esp_lcd_del_dsi_bus(mipi_dsi_bus);
+    }
+    return ret;
+}
+
+#endif  // LCD_MIPI_DSI_USE_ST7123
+
 esp_err_t bsp_touch_new(const bsp_touch_config_t* config, esp_lcd_touch_handle_t* ret_touch)
 {
     /* Initilize I2C */
@@ -1270,7 +1461,14 @@ static lv_display_t* bsp_display_lcd_init(const bsp_display_cfg_t* cfg)
 {
     assert(cfg != NULL);
     bsp_lcd_handles_t lcd_panels;
+    // BSP_ERROR_CHECK_RETURN_NULL(bsp_display_new_with_handles(NULL, &lcd_panels));
+
+    // TODO
+#ifdef LCD_MIPI_DSI_USE_ST7123
+    BSP_ERROR_CHECK_RETURN_NULL(bsp_display_new_with_handles_to_st7123(NULL, &lcd_panels));
+#else
     BSP_ERROR_CHECK_RETURN_NULL(bsp_display_new_with_handles(NULL, &lcd_panels));
+#endif
 
     /* Add LCD screen */
     ESP_LOGD(TAG, "Add LCD screen");
@@ -1335,21 +1533,124 @@ esp_lcd_touch_handle_t bsp_display_get_touch_handle(void)
 
 esp_lcd_touch_handle_t _lcd_touch_handle;
 
+static void lvgl_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
+{
+    if (_touch_handle == NULL) {
+        data->state = LV_INDEV_STATE_REL;
+        return;
+    }
+
+    uint16_t touch_x[1];
+    uint16_t touch_y[1];
+    uint16_t touch_strength[1];
+    uint8_t touch_cnt = 0;
+
+    esp_lcd_touch_read_data(_touch_handle);
+    bool touchpad_pressed =
+        esp_lcd_touch_get_coordinates(_touch_handle, touch_x, touch_y, touch_strength, &touch_cnt, 1);
+
+    if (!touchpad_pressed) {
+        data->state = LV_INDEV_STATE_REL;
+    } else {
+        data->state   = LV_INDEV_STATE_PR;
+        data->point.x = touch_x[0];
+        data->point.y = touch_y[0];
+    }
+}
+
 static lv_indev_t* bsp_display_indev_init(lv_display_t* disp)
 {
     esp_lcd_touch_handle_t tp;
     BSP_ERROR_CHECK_RETURN_NULL(bsp_touch_new(NULL, &tp));
     esp_lcd_touch_exit_sleep(tp);  // !!!
     assert(tp);
+    _touch_handle = tp;
+
+    disp_indev = lv_indev_create();
+    lv_indev_set_type(disp_indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(disp_indev, lvgl_read_cb);
+    lv_indev_set_display(disp_indev, disp);
+
+    return disp_indev;
+}
+
+static lv_indev_t* bsp_display_indev_init_to_st7123(lv_display_t* disp)
+{
+    esp_err_t ret             = ESP_OK;
+    esp_lcd_touch_handle_t tp = NULL;
+
+    /* Initialize I2C for ST7123 touch */
+    BSP_ERROR_CHECK_RETURN_NULL(bsp_i2c_init());
+
+    // bsp_io_expander_pi4ioe_restart_touch();
+
+    /* Initialize ST7123 touch panel */
+    esp_lcd_panel_io_handle_t tp_io_handle     = NULL;
+    esp_lcd_panel_io_i2c_config_t tp_io_config = {
+        .dev_addr            = 0x55,  // ST7123 touch I2C address
+        .control_phase_bytes = 1,
+        .dc_bit_offset       = 0,
+        .lcd_cmd_bits        = 16,
+        .flags =
+            {
+                .disable_control_phase = 1,
+            },
+    };
+    tp_io_config.scl_speed_hz = CONFIG_BSP_I2C_CLK_SPEED_HZ;
+
+    ret = esp_lcd_new_panel_io_i2c_v2(bsp_i2c_get_handle(), &tp_io_config, &tp_io_handle);
+    // ret = esp_lcd_new_panel_io_i2c(bsp_i2c_get_handle(), &tp_io_config, &tp_io_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create ST7123 touch I2C IO: %s", esp_err_to_name(ret));
+        return NULL;
+    }
+
+    const esp_lcd_touch_config_t tp_cfg = {
+        .x_max        = BSP_LCD_H_RES,
+        .y_max        = BSP_LCD_V_RES,
+        .rst_gpio_num = -1,  // BSP_LCD_TOUCH_RST, // NC
+        .int_gpio_num = 23,  // BSP_LCD_TOUCH_INT,
+        .levels =
+            {
+                .reset     = 0,
+                .interrupt = 0,
+            },
+        .flags =
+            {
+                .swap_xy  = 0,
+                .mirror_x = 0,
+                .mirror_y = 0,
+            },
+    };
+
+    ret = esp_lcd_touch_new_i2c_st7123(tp_io_handle, &tp_cfg, &tp);
+    if (ret != ESP_OK || tp == NULL) {
+        ESP_LOGE(TAG, "Failed to create ST7123 touch panel: %s", esp_err_to_name(ret));
+        esp_lcd_panel_io_del(tp_io_handle);
+        return NULL;
+    }
+
+    // Exit sleep mode for touch panel
+    // esp_lcd_touch_exit_sleep(tp);
+
+    // Store the touch handle globally
     _lcd_touch_handle = tp;
 
-    /* Add touch input (for selected screen) */
+    /* Add touch input to LVGL */
     const lvgl_port_touch_cfg_t touch_cfg = {
         .disp   = disp,
         .handle = tp,
     };
 
-    return lvgl_port_add_touch(&touch_cfg);
+    lv_indev_t* indev = lvgl_port_add_touch(&touch_cfg);
+    if (indev == NULL) {
+        ESP_LOGE(TAG, "Failed to add ST7123 touch to LVGL");
+        esp_lcd_panel_io_del(tp_io_handle);
+        return NULL;
+    }
+
+    ESP_LOGI(TAG, "ST7123 touch panel initialized successfully");
+    return indev;
 }
 
 lv_display_t* bsp_display_start(void)
@@ -1361,7 +1662,7 @@ lv_display_t* bsp_display_start(void)
 #if CONFIG_BSP_LCD_COLOR_FORMAT_RGB888
                                  .buff_dma = false,
 #else
-                                 .buff_dma = true,
+                                 .buff_dma                          = true,
 #endif
                                  .buff_spiram = false,
                                  .sw_rotate   = true,
@@ -1379,7 +1680,14 @@ lv_display_t* bsp_display_start_with_config(const bsp_display_cfg_t* cfg)
     BSP_ERROR_CHECK_RETURN_NULL(bsp_display_brightness_init());
 
     BSP_NULL_CHECK(disp = bsp_display_lcd_init(cfg), NULL);
+
+    // TODO
+#ifdef LCD_MIPI_DSI_USE_ST7123
+    BSP_NULL_CHECK(disp_indev = bsp_display_indev_init_to_st7123(disp), NULL);
+#else
     BSP_NULL_CHECK(disp_indev = bsp_display_indev_init(disp), NULL);
+#endif
+
     return disp;
 }
 
