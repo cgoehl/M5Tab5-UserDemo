@@ -1562,18 +1562,16 @@ static lv_display_t* bsp_display_lcd_init(const bsp_display_cfg_t* cfg)
     return lvgl_port_add_disp_dsi(&disp_cfg, &dpi_cfg);
 }
 
-static esp_lcd_touch_handle_t _touch_handle;
+esp_lcd_touch_handle_t _lcd_touch_handle;
 
 esp_lcd_touch_handle_t bsp_display_get_touch_handle(void)
 {
-    return _touch_handle;
+    return _lcd_touch_handle;
 }
-
-esp_lcd_touch_handle_t _lcd_touch_handle;
 
 static void lvgl_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
 {
-    if (_touch_handle == NULL) {
+    if (_lcd_touch_handle == NULL) {
         data->state = LV_INDEV_STATE_REL;
         return;
     }
@@ -1583,9 +1581,9 @@ static void lvgl_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
     uint16_t touch_strength[1];
     uint8_t touch_cnt = 0;
 
-    esp_lcd_touch_read_data(_touch_handle);
+    esp_lcd_touch_read_data(_lcd_touch_handle);
     bool touchpad_pressed =
-        esp_lcd_touch_get_coordinates(_touch_handle, touch_x, touch_y, touch_strength, &touch_cnt, 1);
+        esp_lcd_touch_get_coordinates(_lcd_touch_handle, touch_x, touch_y, touch_strength, &touch_cnt, 1);
 
     if (!touchpad_pressed) {
         data->state = LV_INDEV_STATE_REL;
@@ -1602,7 +1600,7 @@ static lv_indev_t* bsp_display_indev_init(lv_display_t* disp)
     BSP_ERROR_CHECK_RETURN_NULL(bsp_touch_new(NULL, &tp));
     esp_lcd_touch_exit_sleep(tp);  // !!!
     assert(tp);
-    _touch_handle = tp;
+    _lcd_touch_handle = tp;
 
     disp_indev = lv_indev_create();
     lv_indev_set_type(disp_indev, LV_INDEV_TYPE_POINTER);
