@@ -13,6 +13,8 @@ using namespace mooncake;
 using namespace smooth_ui_toolkit;
 using namespace smooth_ui_toolkit::lvgl_cpp;
 
+#define FIRMWARE_VERSION "V0.2"
+
 AppStartupAnim::AppStartupAnim()
 {
     // 配置 App 信息
@@ -42,6 +44,12 @@ void AppStartupAnim::onOpen()
     _logo_5->setAlign(LV_ALIGN_TOP_MID);
     _logo_5->setSrc(&logo_5);
     _logo_5->setPos(700, 308);
+
+    _label_version = std::make_unique<Label>(lv_screen_active());
+    _label_version->setTextColor(lv_color_hex(0xCCCCCC));
+    _label_version->setTextFont(&lv_font_montserrat_24);
+    _label_version->align(LV_ALIGN_CENTER, 580, 320);
+    _label_version->setText(FIRMWARE_VERSION);
 
     _anim_logo_tab_y.pause();
     _anim_logo_tab_y.teleport(785);
@@ -90,6 +98,7 @@ void AppStartupAnim::onRunning()
         }
         if (!_is_sfx_played) {
             if (_anim_logo_5_x.directValue() < 90) {
+                GetHAL()->setSpeakerVolume(80);
                 GetHAL()->playStartupSfx();
                 _is_sfx_played = true;
             }
@@ -118,4 +127,7 @@ void AppStartupAnim::onClose()
 
     _logo_tab.reset();
     _logo_5.reset();
+    _label_version.reset();
+
+    GetHAL()->setSpeakerVolume(60);
 }
