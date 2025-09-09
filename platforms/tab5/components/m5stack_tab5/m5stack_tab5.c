@@ -996,6 +996,43 @@ uint8_t bsp_codec_feed_channel(void)
 }
 
 //==================================================================================
+// 显示屏类型检测
+//==================================================================================
+typedef enum {
+    BSP_DISPLAY_TYPE_UNKNOWN = 0,
+    BSP_DISPLAY_TYPE_ST7703_GT911,
+    BSP_DISPLAY_TYPE_ST7123
+} bsp_display_type_t;
+
+static bsp_display_type_t bsp_detect_display_type(void)
+{
+    esp_err_t ret;
+
+    // 确保I2C已初始化
+    if (bsp_i2c_init() != ESP_OK) {
+        ESP_LOGE(TAG, "I2C init failed for display detection");
+        return BSP_DISPLAY_TYPE_UNKNOWN;
+    }
+
+    // 检测GT911触摸屏 (ST7703配套)
+    ret = i2c_master_probe(i2c_handle, ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS_BACKUP, 50);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Detected GT911 touch controller, using ST7703 display");
+        return BSP_DISPLAY_TYPE_ST7703_GT911;
+    }
+
+    // 检测ST7123触摸屏
+    ret = i2c_master_probe(i2c_handle, 0x55, 50);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Detected ST7123 touch controller, using ST7123 display");
+        return BSP_DISPLAY_TYPE_ST7123;
+    }
+
+    ESP_LOGW(TAG, "No known touch controller detected, defaulting to ST7703");
+    return BSP_DISPLAY_TYPE_ST7703_GT911;
+}
+
+//==================================================================================
 // lcd st7703 1280x720  gt911
 //==================================================================================
 // Bit number used to represent command and parameter
@@ -1236,7 +1273,7 @@ err:
     return ret;
 }
 
-// #define LCD_MIPI_DSI_USE_ST7123
+#define LCD_MIPI_DSI_USE_ST7123
 #ifdef LCD_MIPI_DSI_USE_ST7123
 #include "esp_lcd_st7123.h"
 
@@ -1461,14 +1498,15 @@ static lv_display_t* bsp_display_lcd_init(const bsp_display_cfg_t* cfg)
 {
     assert(cfg != NULL);
     bsp_lcd_handles_t lcd_panels;
-    // BSP_ERROR_CHECK_RETURN_NULL(bsp_display_new_with_handles(NULL, &lcd_panels));
 
-    // TODO
-#ifdef LCD_MIPI_DSI_USE_ST7123
-    BSP_ERROR_CHECK_RETURN_NULL(bsp_display_new_with_handles_to_st7123(NULL, &lcd_panels));
-#else
-    BSP_ERROR_CHECK_RETURN_NULL(bsp_display_new_with_handles(NULL, &lcd_panels));
-#endif
+    // 动态检测显示屏类型
+    bsp_display_type_t display_type = bsp_detect_display_type();
+
+    if (display_type == BSP_DISPLAY_TYPE_ST7123) {
+        BSP_ERROR_CHECK_RETURN_NULL(bsp_display_new_with_handles_to_st7123(NULL, &lcd_panels));
+    } else {
+        BSP_ERROR_CHECK_RETURN_NULL(bsp_display_new_with_handles(NULL, &lcd_panels));
+    }
 
     /* Add LCD screen */
     ESP_LOGD(TAG, "Add LCD screen");
@@ -1662,7 +1700,7 @@ lv_display_t* bsp_display_start(void)
 #if CONFIG_BSP_LCD_COLOR_FORMAT_RGB888
                                  .buff_dma = false,
 #else
-                                 .buff_dma                          = true,
+                                 .buff_dma = true,
 #endif
                                  .buff_spiram = false,
                                  .sw_rotate   = true,
@@ -1681,12 +1719,14 @@ lv_display_t* bsp_display_start_with_config(const bsp_display_cfg_t* cfg)
 
     BSP_NULL_CHECK(disp = bsp_display_lcd_init(cfg), NULL);
 
-    // TODO
-#ifdef LCD_MIPI_DSI_USE_ST7123
-    BSP_NULL_CHECK(disp_indev = bsp_display_indev_init_to_st7123(disp), NULL);
-#else
-    BSP_NULL_CHECK(disp_indev = bsp_display_indev_init(disp), NULL);
-#endif
+    // 动态检测显示屏类型并初始化对应的触摸屏
+    bsp_display_type_t display_type = bsp_detect_display_type();
+
+    if (display_type == BSP_DISPLAY_TYPE_ST7123) {
+        BSP_NULL_CHECK(disp_indev = bsp_display_indev_init_to_st7123(disp), NULL);
+    } else {
+        BSP_NULL_CHECK(disp_indev = bsp_display_indev_init(disp), NULL);
+    }
 
     return disp;
 }
