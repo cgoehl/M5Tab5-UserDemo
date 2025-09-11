@@ -38,7 +38,7 @@ cmake .. && make -j8
 
 #### Tool Chains
 
-[ESP-IDF v5.4.1](https://docs.espressif.com/projects/esp-idf/en/v5.4.1/esp32s3/index.html)
+[ESP-IDF v5.4.2](https://docs.espressif.com/projects/esp-idf/en/v5.4.2/esp32s3/index.html)
 
 #### Build
 
