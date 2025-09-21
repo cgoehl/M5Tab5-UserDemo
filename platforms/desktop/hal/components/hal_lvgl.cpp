@@ -24,26 +24,11 @@ void HalDesktop::lvgl_init()
 
     lv_group_set_default(lv_group_create());
 
-    auto display = lv_sdl_window_create(HAL_SCREEN_WIDTH, HAL_SCREEN_HEIGHT);
+    auto display = lv_x11_window_create("LVGL Simulator", HAL_SCREEN_WIDTH, HAL_SCREEN_HEIGHT);
     lv_display_set_default(display);
-
-    lvTouchpad = lv_sdl_mouse_create();
-    lv_indev_set_group(lvTouchpad, lv_group_get_default());
-    lv_indev_set_display(lvTouchpad, display);
-
-    // // LV_IMAGE_DECLARE(mouse_cursor_icon); /*Declare the image file.*/
-    // lv_obj_t* cursor_obj;
-    // cursor_obj = lv_image_create(lv_screen_active()); /*Create an image object for the cursor */
-    // lv_image_set_src(cursor_obj, &mouse_cursor);      /*Set the image source*/
-    // lv_indev_set_cursor(lvTouchpad, cursor_obj);      /*Connect the image  object to the driver*/
-
-    auto mouse_wheel = lv_sdl_mousewheel_create();
-    lv_indev_set_display(mouse_wheel, display);
-    lv_indev_set_group(mouse_wheel, lv_group_get_default());
-
-    auto keyboard = lv_sdl_keyboard_create();
-    lv_indev_set_display(keyboard, display);
-    lv_indev_set_group(keyboard, lv_group_get_default());
+		
+		LV_IMAGE_DECLARE(mouse_cursor); /*Declare the image file.*/
+		lv_x11_inputs_create(display, &mouse_cursor);
 
 #if not defined(__APPLE__) && not defined(__MACH__)
     std::thread([]() {

@@ -65,6 +65,7 @@ target_link_libraries(app_desktop_build PUBLIC
     ${SDL2_LIBRARIES}
     smooth_ui_toolkit
     pthread
+		X11
 )
 
 # 设置构建路径
